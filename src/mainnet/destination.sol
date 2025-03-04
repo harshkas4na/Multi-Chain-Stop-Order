@@ -10,6 +10,7 @@ struct Reserves {
     uint112 reserve0;
     uint112 reserve1;
 }
+
 contract UniswapDemoStopOrderCallback is AbstractCallback {
     event Stop(
         address indexed pair,
@@ -17,11 +18,19 @@ contract UniswapDemoStopOrderCallback is AbstractCallback {
         address indexed token,
         uint256[] tokens
     );
+    
+    event EthRefunded(
+        address indexed client,
+        uint256 amount
+    );
+    
     IUniswapV2Router02 private router;
     uint private constant DEADLINE = 2707391655;
+    
     constructor(address callback_sender, address _router) AbstractCallback(callback_sender) payable {
         router = IUniswapV2Router02(_router);
     }
+    
     function stop(
         address /* sender */,
         address pair,
@@ -34,20 +43,35 @@ contract UniswapDemoStopOrderCallback is AbstractCallback {
         address token1 = IUniswapV2Pair(pair).token1();
         (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(pair).getReserves();
         require(below_threshold(is_token0, Reserves({ reserve0: reserve0, reserve1: reserve1 }), coefficient, threshold), 'Rate above threshold');
+        
         address token_sell = is_token0 ? token0 : token1;
         address token_buy = is_token0 ? token1 : token0;
+        
         uint256 allowance = IERC20(token_sell).allowance(client, address(this));
         require(allowance > 0, 'No allowance');
         require(IERC20(token_sell).balanceOf(client) >= allowance, 'Insufficient funds');
+        
         assert(IERC20(token_sell).transferFrom(client, address(this), allowance));
         assert(IERC20(token_sell).approve(address(router), allowance));
+        
         address[] memory path = new address[](2);
         path[0] = token_sell;
         path[1] = token_buy;
+        
         uint256[] memory tokens = router.swapExactTokensForTokens(allowance, 0, path, address(this), DEADLINE);
         assert(IERC20(token_buy).transfer(client, tokens[1]));
+        
         emit Stop(pair, client, token_sell, tokens);
+        
+        // Refund remaining ETH to client after order execution
+        uint256 remainingBalance = address(this).balance;
+        if (remainingBalance > 0) {
+            (bool success, ) = payable(client).call{value: remainingBalance}("");
+            require(success, "ETH refund failed");
+            emit EthRefunded(client, remainingBalance);
+        }
     }
+    
     function below_threshold(bool token0, Reserves memory sync, uint256 coefficient, uint256 threshold) internal pure returns (bool) {
         if (token0) {
             return (sync.reserve1 * coefficient) / sync.reserve0 <= threshold;

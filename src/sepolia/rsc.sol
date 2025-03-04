@@ -24,6 +24,11 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
         uint256 threshold
     );
 
+    event ReactRefunded(
+        address indexed client,
+        uint256 amount
+    );
+
     event CallbackSent();
     event Done();
 
@@ -98,6 +103,13 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
             ) {
                 done = true;
                 emit Done();
+                
+                // Refund remaining REACT to client after order completion
+                uint256 remainingBalance = address(this).balance;
+                if (remainingBalance > 0) {
+                    payable(client).transfer(remainingBalance);
+                    emit ReactRefunded(client, remainingBalance);
+                }
             }
         } else {
             Reserves memory sync = abi.decode(log.data, ( Reserves ));

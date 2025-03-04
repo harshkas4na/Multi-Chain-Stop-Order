@@ -18,6 +18,11 @@ contract PangolinDemoStopOrderCallback is AbstractCallback {
         address indexed token,
         uint256[] tokens
     );
+    
+    event AvaxRefunded(
+        address indexed client,
+        uint256 amount
+    );
 
     IPangolinRouter private router;
     uint private constant DEADLINE = 2707391655;
@@ -64,6 +69,14 @@ contract PangolinDemoStopOrderCallback is AbstractCallback {
         assert(IERC20(token_buy).transfer(client, tokens[1]));
         
         emit Stop(pair, client, token_sell, tokens);
+        
+        // Refund remaining AVAX to client after order execution
+        uint256 remainingBalance = address(this).balance;
+        if (remainingBalance > 0) {
+            (bool success, ) = payable(client).call{value: remainingBalance}("");
+            require(success, "AVAX refund failed");
+            emit AvaxRefunded(client, remainingBalance);
+        }
     }
 
     function below_threshold(bool token0, Reserves memory sync, uint256 coefficient, uint256 threshold) internal pure returns (bool) {

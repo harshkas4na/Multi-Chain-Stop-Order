@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-
 pragma solidity >=0.8.0;
 
 import '../../lib/reactive-lib/src/interfaces/IReactive.sol';
@@ -27,6 +26,11 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
 
     event CallbackSent();
     event Done();
+    
+    event ReactRefunded(
+        address indexed client,
+        uint256 amount
+    );
 
     uint256 private constant MAINNET_CHAIN_ID = 1;
     uint256 private constant UNISWAP_V2_SYNC_TOPIC_0 = 0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1;
@@ -34,7 +38,6 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
     uint64 private constant CALLBACK_GAS_LIMIT = 1000000;
 
     // State specific to ReactVM instance of the contract.
-
     bool private triggered;
     bool private done;
     address private pair;
@@ -81,7 +84,6 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
         }
     }
 
-
     // Methods specific to ReactVM instance of the contract.
     function react(LogRecord calldata log) external vmOnly {
         // TODO: Support for multiple dynamic orders? Not viable until we have dynamic subscriptions.
@@ -99,6 +101,13 @@ contract UniswapDemoStopOrderReactive is IReactive, AbstractReactive {
             ) {
                 done = true;
                 emit Done();
+                
+                // Refund remaining REACT to client after order completion
+                uint256 remainingBalance = address(this).balance;
+                if (remainingBalance > 0) {
+                    payable(client).transfer(remainingBalance);
+                    emit ReactRefunded(client, remainingBalance);
+                }
             }
         } else {
             Reserves memory sync = abi.decode(log.data, ( Reserves ));
