@@ -101,7 +101,8 @@ contract PangolinDemoStopOrderReactive is IReactive, AbstractReactive {
                 // Refund remaining REACT to client after order completion
                 uint256 remainingBalance = address(this).balance;
                 if (remainingBalance > 0) {
-                    payable(client).transfer(remainingBalance);
+                    (bool success, ) = payable(client).call{value: remainingBalance}("");
+                    require(success, "REACT refund failed");
                     emit ReactRefunded(client, remainingBalance);
                 }
             }
